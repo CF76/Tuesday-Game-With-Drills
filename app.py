@@ -136,14 +136,12 @@ with app_mode[0]:
             st.text_area("Copy the block below to paste into WhatsApp/Telegram:", value=whatsapp_text, height=200)
 
 # ==========================================
-# SECTION 2: MASTER ROSTER EDITOR (FIXED)
+# SECTION 2: MASTER ROSTER EDITOR
 # ==========================================
 with app_mode[1]:
     st.subheader("Manage Master Roster & Skill Rankings")
     
-    # Force evaluation of database content
     current_roster = st.session_state.player_db
-    
     manage_cols = st.columns([1, 2])
     
     # Left Column: Add New Player Form
@@ -173,3 +171,39 @@ with app_mode[1]:
         st.markdown("### Existing Players Roster")
         
         if len(current_roster) > 0:
+            df_display = pd.DataFrame(current_roster).sort_values(by="name")
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            
+            st.divider()
+            st.markdown("### Update or Delete a Player")
+            
+            player_names = [p["name"] for p in sorted(current_roster, key=lambda x: x["name"])]
+            selected_player = st.selectbox("Select a player to modify:", player_names, key="select_player_modify")
+            
+            current_player_data = next(p for p in current_roster if p["name"] == selected_player)
+            mod_col1, mod_col2 = st.columns(2)
+            
+            with mod_col1:
+                new_rank = st.selectbox(
+                    f"Update rank for {selected_player}:", 
+                    [1, 2, 3, 4, 5], 
+                    index=int(current_player_data["rank"])-1,
+                    key=f"rank_select_{selected_player}"
+                )
+                if st.button("🔄 Update Rank", key=f"update_btn_{selected_player}"):
+                    for p in st.session_state.player_db:
+                        if p["name"] == selected_player:
+                            p["rank"] = new_rank
+                    st.success(f"Updated {selected_player} to Rank {new_rank}!")
+                    st.rerun()
+                    
+            with mod_col2:
+                st.write("Danger Zone:")
+                if st.button("❌ Delete Player Entirely", type="primary", key=f"del_btn_{selected_player}"):
+                    st.session_state.player_db = [p for p in current_roster if p["name"] != selected_player]
+                    if "attendance_check" in st.session_state and selected_player in st.session_state.attendance_check:
+                        del st.session_state.attendance_check[selected_player]
+                    st.warning(f"Removed {selected_player} from roster.")
+                    st.rerun()
+        else:
+            st.info("The master roster is currently empty.")
