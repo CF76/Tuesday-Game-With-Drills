@@ -27,12 +27,28 @@ with app_mode[0]:
     if not sorted_roster:
         st.info("Your master roster is currently empty. Go to the 'Edit Master Roster' tab to add players.")
     else:
+        # Create a dictionary to hold checkbox values in session state if not present
+        if "attendance_check" not in st.session_state:
+            st.session_state.attendance_check = {player['name']: False for player in sorted_roster}
+
+        # Handle structural roster updates (if players were added/removed in the other tab)
+        for player in sorted_roster:
+            if player['name'] not in st.session_state.attendance_check:
+                st.session_state.attendance_check[player['name']] = False
+
         cols = st.columns(4)
         attendance = {}
         
         for idx, player in enumerate(sorted_roster):
             col = cols[idx % 4]
-            is_present = col.checkbox(f"{player['name']} (Rank: {player['rank']})", key=f"match_p_{idx}")
+            # Use session state to manage the value dynamically
+            is_present = col.checkbox(
+                f"{player['name']} (Rank: {player['rank']})", 
+                value=st.session_state.attendance_check[player['name']],
+                key=f"match_p_{player['name']}"
+            )
+            # Update the session state dictionary based on current interaction
+            st.session_state.attendance_check[player['name']] = is_present
             if is_present:
                 attendance[player['name']] = player['rank']
                 
@@ -41,145 +57,53 @@ with app_mode[0]:
         attendees_count = len(attendance)
         st.metric(label="Confirmed Attendees", value=attendees_count)
         
-        if attendees_count < 5:
-            st.warning("You need at least 5 checked players to balance teams.")
-        else:
-            if st.button("⚡ Generate Balanced Teams", type="primary"):
-                active_players = [{"name": name, "rank": rank} for name, rank in attendance.items()]
-                team_size = 5
-                num_teams = max(1, round(attendees_count / team_size))
-                
-                dynamic_target = sum(p["rank"] for p in active_players) / num_teams
-                
-                random.shuffle(active_players)
-                active_players.sort(key=lambda x: x["rank"], reverse=True)
-                
-                teams = [[] for _ in range(num_teams)]
-                
-                # Snake draft logic
-                for i, player in enumerate(active_players):
-                    round_num = i // num_teams
-                    team_idx = i % num_teams
-                    if round_num % 2 == 1:
-                        team_idx = num_teams - 1 - team_idx
-                    teams[team_idx].append(player)
-                    
-                # Optimization logic
-                def get_team_score(t):
-                    return sum(p["rank"] for p in t)
-                    
-                for _ in range(100):
-                    teams.sort(key=get_team_score)
-                    weakest = teams[0]
-                    strongest = teams[-1]
-                    diff = get_team_score(strongest) - get_team_score(weakest)
-                    
-                    if diff <= 1:
-                        break
-                        
-                    swapped = False
-                    for p_strong in strongest:
-                        for p_weak in weakest:
-                            rank_diff = p_strong["rank"] - p_weak["rank"]
-                            if 0 < rank_diff < diff:
-                                strongest.remove(p_strong)
-                                weakest.remove(p_weak)
-                                strongest.append(p_weak)
-                                weakest.append(p_strong)
-                                swapped = True
-                                break
-                        if swapped:
-                            break
-                    if not swapped:
-                        break
-
-                # Display Results
-                st.success(f"Teams generated! Ideal Target Team Score: {dynamic_target:.1f}")
-                
-                result_cols = st.columns(num_teams)
-                whatsapp_text = "⚽ *Weekly 5-a-Side Lineups* ⚽\n\n"
-                
-                for idx, team in enumerate(teams):
-                    with result_cols[idx]:
-                        score = get_team_score(team)
-                        st.markdown(f"### 🎽 Team {idx+1}")
-                        st.caption(f"Total Rank: **{score}**")
-                        
-                        team_names = []
-                        for p in team:
-                            st.write(f"• {p['name']}")
-                            team_names.append(p['name'])
-                        
-                        whatsapp_text += f"*Team {idx+1}:*\n" + "\n".join([f"• {n}" for n in team_names]) + "\n\n"
-                
-                st.divider()
-                st.subheader("📋 Copy Lineups for Chat")
-                st.text_area("Copy the block below to paste into WhatsApp/Telegram:", value=whatsapp_text, height=200)
-
-# ==========================================
-# SECTION 2: STANDALONE MASTER ROSTER EDITOR (SANDBOX COMPATIBLE)
-# ==========================================
-with app_mode[1]:
-    st.subheader("Manage Master Roster & Skill Rankings")
-    
-    manage_cols = st.columns([1, 2])
-    
-    # Left Column: Add New Player Form
-    with manage_cols[0]:
-        st.markdown("### Add New Player")
-        with st.form("admin_add_form", clear_on_submit=True):
-            admin_name = st.text_input("Player Name").strip()
-            admin_rank = st.slider("Initial Rank", 1, 5, 3)
-            if st.form_submit_button("Add to Roster") and admin_name:
-                st.session_state.player_db.append({"name": admin_name, "rank": admin_rank})
-                st.success(f"Added {admin_name}!")
+        # Action Buttons Layout
+        btn_col1, btn_col2 = st.columns([1, 4])
+        
+        with btn_col1:
+            # Clear Weekly Selection Button
+            if st.button("🔄 Clear Weekly Selection", type="secondary"):
+                for name in st.session_state.attendance_check:
+                    st.session_state.attendance_check[name] = False
                 st.rerun()
                 
-        st.markdown("""
-        ### 📊 Skill Index Guide
-        * **5 (Elite):** High fitness, dominant player
-        * **4 (Strong):** Reliable, good game awareness
-        * **3 (Average):** Decent fitness, regular casual
-        * **2 (Casual):** Plays occasionally, lower fitness
-        * **1 (Beginner):** Minimal football experience
-        """)
+        with btn_col2:
+            generate_clicked = st.button("⚡ Generate Balanced Teams", type="primary")
 
-    # Right Column: Sandbox-Safe Modifier Panel
-    with manage_cols[1]:
-        st.markdown("### Existing Players Roster")
-        
-        if st.session_state.player_db:
-            # Display plain table so users can see everyone
-            df_display = pd.DataFrame(st.session_state.player_db).sort_values(by="name")
-            st.table(df_display)
+        if attendees_count < 5 and generate_clicked:
+            st.warning("You need at least 5 checked players to balance teams.")
+        elif generate_clicked:
+            active_players = [{"name": name, "rank": rank} for name, rank in attendance.items()]
+            team_size = 5
+            num_teams = max(1, round(attendees_count / team_size))
             
-            st.divider()
-            st.markdown("### Update or Delete a Player")
+            dynamic_target = sum(p["rank"] for p in active_players) / num_teams
             
-            # Simple interactive dropdown options that work everywhere
-            player_names = [p["name"] for p in sorted(st.session_state.player_db, key=lambda x: x["name"])]
-            selected_player = st.selectbox("Select a player to modify:", player_names)
+            random.shuffle(active_players)
+            active_players.sort(key=lambda x: x["rank"], reverse=True)
             
-            current_player_data = next(p for p in st.session_state.player_db if p["name"] == selected_player)
+            teams = [[] for _ in range(num_teams)]
             
-            mod_col1, mod_col2 = st.columns(2)
-            
-            with mod_col1:
-                new_rank = st.selectbox(
-                    f"Update rank for {selected_player}:", 
-                    [1, 2, 3, 4, 5], 
-                    index=int(current_player_data["rank"])-1
-                )
-                if st.button("🔄 Update Rank"):
-                    current_player_data["rank"] = new_rank
-                    st.success(f"Updated {selected_player} to Rank {new_rank}!")
-                    st.rerun()
+            # Snake draft logic
+            for i, player in enumerate(active_players):
+                round_num = i // num_teams
+                team_idx = i % num_teams
+                if round_num % 2 == 1:
+                    team_idx = num_teams - 1 - team_idx
+                teams[team_idx].append(player)
+                
+            # Optimization logic
+            def get_team_score(t):
+                return sum(p["rank"] for p in t)
+                
+            for _ in range(100):
+                teams.sort(key=get_team_score)
+                weakest = teams[0]
+                strongest = teams[-1]
+                diff = get_team_score(strongest) - get_team_score(weakest)
+                
+                if diff <= 1:
+                    break
                     
-            with mod_col2:
-                st.write("Danger Zone:")
-                if st.button("❌ Delete Player Entirely", type="primary"):
-                    st.session_state.player_db = [p for p in st.session_state.player_db if p["name"] != selected_player]
-                    st.warning(f"Removed {selected_player} from roster.")
-                    st.rerun()
-        else:
-            st.info("The master roster is currently empty.")
+                swapped = False
+                for p_strong
