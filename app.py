@@ -6,7 +6,7 @@ st.set_page_config(page_title="5-a-side Team Balancer", layout="wide")
 
 # --- DATABASE CONNECTION (GOOGLE SHEETS) ---
 # Paste your public Google Sheet link here
-SHEET_URL = "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/export?format=csv"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1D5Qc_FeXO47w7JSNu9bBeXv6YcdEWS2MtA-5NIzimQk/edit?usp=sharing"
 
 @st.cache_data(ttl=60)  # Caches the data for 60 seconds to prevent constant API calls
 def load_roster_from_sheets(url):
