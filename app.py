@@ -4,7 +4,7 @@ import pandas as pd
 
 st.set_page_config(page_title="5-a-side Team Balancer", layout="wide")
 
-# Use session state database natively (no file saving required for sandboxes)
+# Safe initialization of session state database
 if "player_db" not in st.session_state:
     st.session_state.player_db = [
         {"name": "Alex", "rank": 5}, {"name": "Ben", "rank": 5},
@@ -27,11 +27,9 @@ with app_mode[0]:
     if not sorted_roster:
         st.info("Your master roster is currently empty. Go to the 'Edit Master Roster' tab to add players.")
     else:
-        # Create a dictionary to hold checkbox values in session state if not present
         if "attendance_check" not in st.session_state:
             st.session_state.attendance_check = {player['name']: False for player in sorted_roster}
 
-        # Handle structural roster updates (if players were added/removed in the other tab)
         for player in sorted_roster:
             if player['name'] not in st.session_state.attendance_check:
                 st.session_state.attendance_check[player['name']] = False
@@ -41,13 +39,11 @@ with app_mode[0]:
         
         for idx, player in enumerate(sorted_roster):
             col = cols[idx % 4]
-            # Use session state to manage the value dynamically
             is_present = col.checkbox(
                 f"{player['name']} (Rank: {player['rank']})", 
                 value=st.session_state.attendance_check[player['name']],
                 key=f"match_p_{player['name']}"
             )
-            # Update the session state dictionary based on current interaction
             st.session_state.attendance_check[player['name']] = is_present
             if is_present:
                 attendance[player['name']] = player['rank']
@@ -57,18 +53,16 @@ with app_mode[0]:
         attendees_count = len(attendance)
         st.metric(label="Confirmed Attendees", value=attendees_count)
         
-        # Action Buttons Layout
         btn_col1, btn_col2 = st.columns([1, 4])
         
         with btn_col1:
-            # Clear Weekly Selection Button
-            if st.button("🔄 Clear Weekly Selection", type="secondary"):
+            if st.button("🔄 Clear Weekly Selection", key="clear_attendance_btn"):
                 for name in st.session_state.attendance_check:
                     st.session_state.attendance_check[name] = False
                 st.rerun()
                 
         with btn_col2:
-            generate_clicked = st.button("⚡ Generate Balanced Teams", type="primary")
+            generate_clicked = st.button("⚡ Generate Balanced Teams", type="primary", key="generate_teams_btn")
 
         if attendees_count < 5 and generate_clicked:
             st.warning("You need at least 5 checked players to balance teams.")
@@ -84,7 +78,6 @@ with app_mode[0]:
             
             teams = [[] for _ in range(num_teams)]
             
-            # Snake draft logic
             for i, player in enumerate(active_players):
                 round_num = i // num_teams
                 team_idx = i % num_teams
@@ -92,7 +85,6 @@ with app_mode[0]:
                     team_idx = num_teams - 1 - team_idx
                 teams[team_idx].append(player)
                 
-            # Optimization logic
             def get_team_score(t):
                 return sum(p["rank"] for p in t)
                 
@@ -111,4 +103,73 @@ with app_mode[0]:
                         rank_diff = p_strong["rank"] - p_weak["rank"]
                         if 0 < rank_diff < diff:
                             strongest.remove(p_strong)
-                            weakest.remove
+                            weakest.remove(p_weak)
+                            strongest.append(p_weak)
+                            weakest.append(p_strong)
+                            swapped = True
+                            break
+                    if swapped:
+                        break
+                if not swapped:
+                    break
+
+            st.success(f"Teams generated! Ideal Target Team Score: {dynamic_target:.1f}")
+            
+            result_cols = st.columns(num_teams)
+            whatsapp_text = "⚽ *Weekly 5-a-Side Lineups* ⚽\n\n"
+            
+            for idx, team in enumerate(teams):
+                with result_cols[idx]:
+                    score = get_team_score(team)
+                    st.markdown(f"### 🎽 Team {idx+1}")
+                    st.caption(f"Total Rank: **{score}**")
+                    
+                    team_names = []
+                    for p in team:
+                        st.write(f"• {p['name']}")
+                        team_names.append(p['name'])
+                    
+                    whatsapp_text += f"*Team {idx+1}:*\n" + "\n".join([f"• {n}" for n in team_names]) + "\n\n"
+            
+            st.divider()
+            st.subheader("📋 Copy Lineups for Chat")
+            st.text_area("Copy the block below to paste into WhatsApp/Telegram:", value=whatsapp_text, height=200)
+
+# ==========================================
+# SECTION 2: MASTER ROSTER EDITOR (FIXED)
+# ==========================================
+with app_mode[1]:
+    st.subheader("Manage Master Roster & Skill Rankings")
+    
+    # Force evaluation of database content
+    current_roster = st.session_state.player_db
+    
+    manage_cols = st.columns([1, 2])
+    
+    # Left Column: Add New Player Form
+    with manage_cols[0]:
+        st.markdown("### Add New Player")
+        with st.form("admin_add_form", clear_on_submit=True):
+            admin_name = st.text_input("Player Name").strip()
+            admin_rank = st.slider("Initial Rank", 1, 5, 3)
+            submit_add = st.form_submit_button("Add to Roster")
+            
+            if submit_add and admin_name:
+                st.session_state.player_db.append({"name": admin_name, "rank": admin_rank})
+                st.success(f"Added {admin_name}!")
+                st.rerun()
+                
+        st.markdown("""
+        ### 📊 Skill Index Guide
+        * **5 (Elite):** High fitness, dominant player
+        * **4 (Strong):** Reliable, good game awareness
+        * **3 (Average):** Decent fitness, regular casual
+        * **2 (Casual):** Plays occasionally, lower fitness
+        * **1 (Beginner):** Minimal football experience
+        """)
+
+    # Right Column: Stable Modifier Panel
+    with manage_cols[1]:
+        st.markdown("### Existing Players Roster")
+        
+        if len(current_roster) > 0:
