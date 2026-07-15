@@ -111,24 +111,4 @@ with app_mode[0]:
                         rank_diff = p_strong["rank"] - p_weak["rank"]
                         if 0 < rank_diff < diff:
                             strongest.remove(p_strong)
-                            weakest.remove(p_weak)
-                            strongest.append(p_weak)
-                            weakest.append(p_strong)
-                            swapped = True
-                            break
-                    if swapped:
-                        break
-                if not swapped:
-                    break
-
-            # Display Results
-            st.success(f"Teams generated! Ideal Target Team Score: {dynamic_target:.1f}")
-            
-            result_cols = st.columns(num_teams)
-            whatsapp_text = "⚽ *Weekly 5-a-Side Lineups* ⚽\n\n"
-            
-            for idx, team in enumerate(teams):
-                with result_cols[idx]:
-                    score = get_team_score(team)
-                    st.markdown(f"### 🎽 Team {idx+1}")
-                    st.caption(f"Total Rank
+                            weakest.remove
