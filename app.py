@@ -4,13 +4,29 @@ import pandas as pd
 
 st.set_page_config(page_title="5-a-side Team Balancer", layout="wide")
 
-# Safe initialization of session state database
-if "player_db" not in st.session_state:
-    st.session_state.player_db = [
+# --- DATABASE CONNECTION (GOOGLE SHEETS) ---
+# Paste your public Google Sheet link here
+SHEET_URL = "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/export?format=csv"
+
+@st.cache_data(ttl=60)  # Caches the data for 60 seconds to prevent constant API calls
+def load_roster_from_sheets(url):
+    try:
+        df = pd.read_csv(url)
+        # Ensure correct column headers exist
+        if "name" in df.columns and "rank" in df.columns:
+            return df.to_dict(orient="records")
+    except Exception as e:
+        st.error(f"Error loading database: {e}")
+    
+    # Fallback default values if connection fails
+    return [
         {"name": "Alex", "rank": 5}, {"name": "Ben", "rank": 5},
-        {"name": "Charlie", "rank": 4}, {"name": "Daniel", "rank": 3},
-        {"name": "Ethan", "rank": 4}, {"name": "Freddie", "rank": 2}
+        {"name": "Charlie", "rank": 4}, {"name": "Daniel", "rank": 3}
     ]
+
+# Populate database from Google Sheet
+if "player_db" not in st.session_state:
+    st.session_state.player_db = load_roster_from_sheets(SHEET_URL)
 
 # Main App Navigation
 st.title("⚽ 5-a-Side Organizer Workspace")
@@ -25,7 +41,7 @@ with app_mode[0]:
     sorted_roster = sorted(st.session_state.player_db, key=lambda x: x["name"])
     
     if not sorted_roster:
-        st.info("Your master roster is currently empty. Go to the 'Edit Master Roster' tab to add players.")
+        st.info("Your master roster is currently empty.")
     else:
         if "attendance_check" not in st.session_state:
             st.session_state.attendance_check = {player['name']: False for player in sorted_roster}
@@ -136,74 +152,21 @@ with app_mode[0]:
             st.text_area("Copy the block below to paste into WhatsApp/Telegram:", value=whatsapp_text, height=200)
 
 # ==========================================
-# SECTION 2: MASTER ROSTER EDITOR
+# SECTION 2: VIEW MASTER ROSTER
 # ==========================================
 with app_mode[1]:
-    st.subheader("Manage Master Roster & Skill Rankings")
+    st.subheader("Master Roster (Read-Only via Google Sheets)")
+    st.write("To add, edit, or delete players permanently, update your master list directly inside your Google Sheet file.")
     
-    current_roster = st.session_state.player_db
-    manage_cols = st.columns([1, 2])
-    
-    # Left Column: Add New Player Form
-    with manage_cols[0]:
-        st.markdown("### Add New Player")
-        with st.form("admin_add_form", clear_on_submit=True):
-            admin_name = st.text_input("Player Name").strip()
-            admin_rank = st.slider("Initial Rank", 1, 5, 3)
-            submit_add = st.form_submit_button("Add to Roster")
-            
-            if submit_add and admin_name:
-                st.session_state.player_db.append({"name": admin_name, "rank": admin_rank})
-                st.success(f"Added {admin_name}!")
-                st.rerun()
-                
-        st.markdown("""
-        ### 📊 Skill Index Guide
-        * **5 (Elite):** High fitness, dominant player
-        * **4 (Strong):** Reliable, good game awareness
-        * **3 (Average):** Decent fitness, regular casual
-        * **2 (Casual):** Plays occasionally, lower fitness
-        * **1 (Beginner):** Minimal football experience
-        """)
+    if st.button("🔄 Sync with Google Sheet Now"):
+        st.cache_data.clear()
+        st.session_state.player_db = load_roster_from_sheets(SHEET_URL)
+        st.rerun()
 
-    # Right Column: Stable Modifier Panel
-    with manage_cols[1]:
-        st.markdown("### Existing Players Roster")
-        
-        if len(current_roster) > 0:
-            df_display = pd.DataFrame(current_roster).sort_values(by="name")
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
-            
-            st.divider()
-            st.markdown("### Update or Delete a Player")
-            
-            player_names = [p["name"] for p in sorted(current_roster, key=lambda x: x["name"])]
-            selected_player = st.selectbox("Select a player to modify:", player_names, key="select_player_modify")
-            
-            current_player_data = next(p for p in current_roster if p["name"] == selected_player)
-            mod_col1, mod_col2 = st.columns(2)
-            
-            with mod_col1:
-                new_rank = st.selectbox(
-                    f"Update rank for {selected_player}:", 
-                    [1, 2, 3, 4, 5], 
-                    index=int(current_player_data["rank"])-1,
-                    key=f"rank_select_{selected_player}"
-                )
-                if st.button("🔄 Update Rank", key=f"update_btn_{selected_player}"):
-                    for p in st.session_state.player_db:
-                        if p["name"] == selected_player:
-                            p["rank"] = new_rank
-                    st.success(f"Updated {selected_player} to Rank {new_rank}!")
-                    st.rerun()
-                    
-            with mod_col2:
-                st.write("Danger Zone:")
-                if st.button("❌ Delete Player Entirely", type="primary", key=f"del_btn_{selected_player}"):
-                    st.session_state.player_db = [p for p in current_roster if p["name"] != selected_player]
-                    if "attendance_check" in st.session_state and selected_player in st.session_state.attendance_check:
-                        del st.session_state.attendance_check[selected_player]
-                    st.warning(f"Removed {selected_player} from roster.")
-                    st.rerun()
-        else:
-            st.info("The master roster is currently empty.")
+    st.divider()
+    
+    if len(st.session_state.player_db) > 0:
+        df_display = pd.DataFrame(st.session_state.player_db).sort_values(by="name")
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+    else:
+        st.info("The master roster is empty.")
