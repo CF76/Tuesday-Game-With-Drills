@@ -5,32 +5,41 @@ import pandas as pd
 st.set_page_config(page_title="5-a-side Team Balancer", layout="wide")
 
 # --- DATABASE CONNECTION (GOOGLE SHEETS) ---
-# Paste your public Google Sheet link here
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1D5Qc_FeXO47w7JSNu9bBeXv6YcdEWS2MtA-5NIzimQk/edit?usp=sharing"
+# Replace this string with your actual converted export URL from Step 2
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1D5Qc_FeXO47w7JSNu9bBeXv6YcdEWS2MtA-5NIzimQk/export?format=csv"
 
-@st.cache_data(ttl=60)  # Caches the data for 60 seconds to prevent constant API calls
+@st.cache_data(ttl=10)  # Caches data for 10 seconds to keep it snappy
 def load_roster_from_sheets(url):
     try:
+        # Read the CSV directly from the public link
         df = pd.read_csv(url)
-        # Ensure correct column headers exist
+        
+        # Clean column names (remove hidden spaces, lowercase everything)
+        df.columns = df.columns.str.strip().str.lower()
+        
         if "name" in df.columns and "rank" in df.columns:
-            return df.to_dict(orient="records")
+            # Drop empty rows and format cleanly
+            df = df.dropna(subset=["name", "rank"])
+            df["rank"] = df["rank"].astype(int)
+            return df[["name", "rank"]].to_dict(orient="records")
+        else:
+            st.error("Sheet format error: Ensure your column headers are exactly 'name' and 'rank'.")
     except Exception as e:
-        st.error(f"Error loading database: {e}")
+        st.error(f"Could not connect to Google Sheet: {e}")
     
-    # Fallback default values if connection fails
+    # Fallback sample values if the sheet fails to load or connect
     return [
         {"name": "Alex", "rank": 5}, {"name": "Ben", "rank": 5},
         {"name": "Charlie", "rank": 4}, {"name": "Daniel", "rank": 3}
     ]
 
-# Populate database from Google Sheet
-if "player_db" not in st.session_state:
+# Populate database from Google Sheet connection
+if "player_db" not in st.session_state or st.sidebar.button("🔄 Force Sync Sheets"):
     st.session_state.player_db = load_roster_from_sheets(SHEET_URL)
 
 # Main App Navigation
 st.title("⚽ 5-a-Side Organizer Workspace")
-app_mode = st.tabs(["🗓️ Weekly Match Selection", "📝 Edit Master Roster"])
+app_mode = st.tabs(["🗓️ Weekly Match Selection", "📝 View Master Roster & Guide"])
 
 # ==========================================
 # SECTION 1: WEEKLY MATCH SELECTION
@@ -152,21 +161,36 @@ with app_mode[0]:
             st.text_area("Copy the block below to paste into WhatsApp/Telegram:", value=whatsapp_text, height=200)
 
 # ==========================================
-# SECTION 2: VIEW MASTER ROSTER
+# SECTION 2: VIEW MASTER ROSTER & GUIDE
 # ==========================================
 with app_mode[1]:
-    st.subheader("Master Roster (Read-Only via Google Sheets)")
-    st.write("To add, edit, or delete players permanently, update your master list directly inside your Google Sheet file.")
+    st.subheader("Master Roster Database")
+    st.write("To add, change, or remove players permanently, modify rows directly inside your Google Sheet.")
     
-    if st.button("🔄 Sync with Google Sheet Now"):
-        st.cache_data.clear()
-        st.session_state.player_db = load_roster_from_sheets(SHEET_URL)
-        st.rerun()
+    manage_cols = st.columns([1, 2])
+    
+    # Left Column: Restored Skills Reference Guide
+    with manage_cols[0]:
+        st.markdown("""
+        ### 📊 Skill Index Guide
+        Use this benchmark to rank players consistently inside your Google Sheet:
+        * **5 (Elite):** High fitness, dominant technical ability.
+        * **4 (Strong):** Reliable, good positional awareness.
+        * **3 (Average):** Decent fitness, baseline regular player.
+        * **2 (Casual):** Plays occasionally, developing fitness.
+        * **1 (Beginner):** Minimal experience.
+        """)
+        
+        if st.button("🔄 Sync with Google Sheet Now", type="primary", key="sync_roster_btn"):
+            st.cache_data.clear()
+            st.session_state.player_db = load_roster_from_sheets(SHEET_URL)
+            st.rerun()
 
-    st.divider()
-    
-    if len(st.session_state.player_db) > 0:
-        df_display = pd.DataFrame(st.session_state.player_db).sort_values(by="name")
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
-    else:
-        st.info("The master roster is empty.")
+    # Right Column: Existing Database Table View
+    with manage_cols[1]:
+        st.markdown("### Current Active Roster")
+        if len(st.session_state.player_db) > 0:
+            df_display = pd.DataFrame(st.session_state.player_db).sort_values(by="name")
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+        else:
+            st.info("The roster data is currently blank.")
